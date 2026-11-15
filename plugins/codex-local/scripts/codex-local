@@ -1,0 +1,6 @@
+#!/bin/sh
+# Wrapper exécutable du pont codex-local. Rend $CODEX_LOCAL utilisable tel quel:
+#   "$CODEX_LOCAL" run --mode read ...
+# Choisit python3 du PATH (>= 3.8) et exécute codex_local.py situé à côté.
+here=$(cd "$(dirname "$0")" && pwd)
+exec python3 "$here/codex_local.py" "$@"

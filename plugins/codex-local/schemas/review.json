@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "confidence", "summary", "findings", "missed_risks", "checks_to_run", "brief_feedback"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["agree", "partially_agree", "disagree", "cannot_assess"] },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "claim_challenged", "evidence", "suggested_check"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor", "nit"] },
+          "claim_challenged": { "type": "string" },
+          "evidence": { "type": "string" },
+          "suggested_check": { "type": "string" }
+        }
+      }
+    },
+    "missed_risks": { "type": "array", "items": { "type": "string" } },
+    "checks_to_run": { "type": "array", "items": { "type": "string" } },
+    "brief_feedback": { "type": "string" }
+  }
+}

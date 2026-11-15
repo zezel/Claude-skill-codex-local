@@ -1,0 +1,11 @@
+{
+  "name": "local-tools",
+  "owner": { "name": "Nassim Ghandour" },
+  "plugins": [
+    {
+      "name": "codex-local",
+      "source": "./plugins/codex-local",
+      "description": "Délégation à Codex CLI, seconde opinion contradictoire et apprentissage de confiance entre Claude Code et Codex."
+    }
+  ]
+}

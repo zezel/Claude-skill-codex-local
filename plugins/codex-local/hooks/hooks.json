@@ -1,0 +1,16 @@
+{
+  "description": "codex-local : injecte au démarrage le chemin du pont, l'état de Codex et les runs sans verdict.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/codex_local.py\" hook-session",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
