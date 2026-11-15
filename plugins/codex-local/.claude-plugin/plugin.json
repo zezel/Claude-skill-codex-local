@@ -2,6 +2,16 @@
   "name": "codex-local",
   "version": "0.4.1",
   "description": "Claude Code apprend à déléguer à Codex CLI (quotas, choix du modèle), à s'en servir comme contradicteur sur les décisions à enjeux, et à calibrer la confiance mutuelle via un ledger local.",
-  "author": { "name": "Nassim Ghandour" },
-  "keywords": ["codex", "delegation", "second-opinion", "quota", "review"]
+  "author": {
+    "name": "Nassim Ghandour"
+  },
+  "keywords": [
+    "codex",
+    "delegation",
+    "second-opinion",
+    "quota",
+    "review"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/zezel/Claude-skill-codex-local"
 }

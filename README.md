@@ -1,91 +1,174 @@
 # codex-local
 
-Plugin Claude Code. Claude apprend à déléguer à Codex CLI, à s'en servir comme contradicteur sur les décisions à enjeux, et à calibrer la confiance mutuelle à partir de verdicts enregistrés.
+**Deux agents de code valent mieux qu'un. Claude Code délègue à Codex CLI, le fait contredire sur les décisions importantes, et apprend au fil des runs ce qu'il peut lui confier.**
+
+[![Version](https://img.shields.io/badge/version-0.4.1-blue)](plugins/codex-local/.claude-plugin/plugin.json)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-orange)](https://docs.claude.com/en/docs/claude-code/plugins)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-informational)](plugins/codex-local/scripts/codex_local.py)
+[![Zéro dépendance](https://img.shields.io/badge/d%C3%A9pendances-stdlib%20uniquement-lightgrey)](plugins/codex-local/scripts/codex_local.py)
+
+---
+
+## Pourquoi
+
+Si tu as un abonnement Claude et un abonnement ChatGPT, tu paies deux quotas d'agent de code. En pratique, tu en utilises un seul et l'autre reste inutilisé.
+
+`codex-local` les fait travailler ensemble, depuis Claude Code, sans changer tes habitudes :
+
+- **Tu économises ton quota Claude.** Les tâches longues et mécaniques (exploration d'un gros code, tests, refactors répétitifs, résumés de logs) partent chez Codex. Claude garde le raisonnement et la vérification.
+- **Tu fiabilises les décisions à risque.** Avant de te présenter une conclusion sur la sécurité, le RGPD, une migration de données, une config prod ou un calcul de paie, Claude la fait attaquer par un autre modèle. Deux modèles différents se trompent rarement de la même façon.
+- **La confiance se mérite, elle ne se suppose pas.** Chaque run reçoit un verdict (accepté, modifié, rejeté). Codex gagne de l'autonomie par type de tâche uniquement quand les chiffres le justifient, et la perd au premier rejet.
+- **Ton quota Codex est protégé aussi.** Le pont lit le pourcentage restant (fenêtre 5h et semaine) et refuse les délégations ordinaires quand il devient bas, en gardant une réserve pour les secondes opinions.
+
+Une fois installé, il n'y a rien à apprendre : Claude sait quand déléguer et quand demander un avis contradictoire.
+
+## Comment ça marche
+
+```mermaid
+flowchart LR
+    U([Toi]) --> C[Claude Code]
+    C -->|tâche bornée et vérifiable| D{Déléguer ?}
+    D -->|oui| P[Pont codex_local.py]
+    D -->|non| C
+    P -->|brief + CLAUDE.md + sandbox| X[Codex CLI]
+    X -->|résultat compact| P
+    P --> C
+    C -->|vérifie puis verdict| L[(ledger local)]
+    L -->|stats, niveaux d'autonomie, règles apprises| C
+```
+
+1. **Claude décide** s'il délègue, à partir d'une grille claire : ce qui est bien borné, vérifiable à bas coût et gourmand en tokens part chez Codex. Ce qui engage l'architecture, dépend du contexte de la conversation ou touche des secrets reste chez Claude.
+2. **Le pont prépare le run** : brief structuré, choix du modèle (`fast`, `standard`, `deep`), sandbox, contrôle du quota, détection de secrets dans le brief.
+3. **Codex travaille** avec la même base de connaissances que Claude (`CLAUDE.md`, règles, skills, agents du projet).
+4. **Claude vérifie** et enregistre un verdict. Il ne relaie jamais un résultat de Codex sans l'avoir vérifié.
+5. **Le système apprend** : `stats` calcule les taux de réussite par type de tâche, recommande les niveaux d'autonomie et mesure si les objections de Codex étaient fondées.
 
 ## Installation
 
-Prérequis: Codex CLI installé et authentifié (`codex login`), Python 3.8+.
+Prérequis : [Codex CLI](https://github.com/openai/codex) installé et authentifié (`codex login`), Python 3.8+.
+
+Dans Claude Code :
+
+```
+/plugin marketplace add zezel/Claude-skill-codex-local
+/plugin install codex-local@local-tools
+```
+
+C'est tout. Le hook et les skills sont actifs dès l'installation, et chaque projet s'initialise au premier run. `/codex-local doctor` sert uniquement au diagnostic.
+
+Pour tester sans installer, depuis un clone du dépôt :
 
 ```bash
-# depuis le dossier qui contient ce README
-claude plugin marketplace add ./codex-local-marketplace
-claude plugin install codex-local@local-tools
+claude --plugin-dir ./plugins/codex-local
 ```
-Pour tester sans installer: `claude --plugin-dir ./codex-local-marketplace/plugins/codex-local`.
 
-Rien d'autre: le comportement est actif dès l'installation (hook + skills) et chaque projet s'initialise au premier `run`. `/codex-local doctor` sert uniquement au diagnostic.
-
-## Ce que ça installe
+## Ce que contient le plugin
 
 | Élément | Rôle |
 |---|---|
-| Hook SessionStart | expose `"$CODEX_LOCAL"`, l'état de Codex, les runs sans verdict |
-| Skill `codex-delegation` | quoi déléguer, quel mode, quel tier, comment briefer et vérifier, discipline de quota |
-| Skill `codex-second-opinion` | protocole de contradiction (blind puis attaque), obligatoire sur enjeux élevés |
-| Skill `codex-learning` | verdicts, promotion/rétrogradation d'autonomie, règles apprises |
-| `/codex-local` | `doctor`, `status`, `delegate`, `review`, `learn` |
-| `scripts/codex_local.py` | pont: `run`, `record`, `stats`, `pending`, `doctor` |
+| Hook `SessionStart` | expose `"$CODEX_LOCAL"`, l'état de Codex et les runs sans verdict au début de chaque session |
+| Skill `codex-delegation` | quoi déléguer, dans quel mode, avec quel modèle, comment briefer et vérifier, discipline de quota |
+| Skill `codex-second-opinion` | protocole de contradiction (avis à l'aveugle, puis attaque), obligatoire sur les enjeux élevés |
+| Skill `codex-learning` | verdicts, promotion et rétrogradation d'autonomie, règles apprises |
+| Commande `/codex-local` | `doctor`, `status`, `quota`, `budget`, `config`, `delegate`, `review`, `stats`, `learn` |
+| `scripts/codex_local.py` | le pont : `run`, `record`, `stats`, `pending`, `quota`, `budget`, `config`, `doctor` |
 
-Les skills se déclenchent seuls selon leur description: Claude n'a pas besoin de la commande pour déléguer.
+Les skills se déclenchent seuls selon le contexte. La commande sert à forcer une action ou à consulter l'état.
 
-## Partage de la base de connaissances `.claude`
+## La seconde opinion contradictoire
 
-Point à savoir: Codex ne lit pas `CLAUDE.md` ni `.claude/` par défaut, il lit `AGENTS.md`. Le plugin contourne sans toucher à `~/.codex/config.toml`:
+C'est la fonction la plus utile du plugin. Elle est obligatoire avant toute conclusion définitive sur :
 
-1. Chaque run passe `-c project_doc_fallback_filenames=["CLAUDE.md"]`: Codex charge `CLAUDE.md` là où il n'y a pas d'`AGENTS.md` dans le même dossier. Si les deux existent dans un dossier, `AGENTS.md` gagne.
-2. Chaque brief liste les fichiers utiles qui existent: `CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`, `.claude/rules/**`, `.claude/skills/*/SKILL.md`, `.claude/codex-local/learned.md`, avec l'ordre de les lire. Les `@imports` de CLAUDE.md ne sont pas expansés par Codex, le brief le lui rappelle.
-3. Les agents `.claude/agents/*.md` (projet et `~/.claude/agents`) sont listés comme définitions de rôle. Codex ne les exécute pas: il lit leurs consignes et ne les endosse que si le brief les nomme (`run --agent <nom>`). Leur frontmatter (`tools`, `model`) est ignoré et n'élargit jamais le sandbox. Si ton `.agents` côté Codex pointe déjà vers `.claude`, les listes du brief font doublon sans gêner.
-4. Le ledger, `learned.md` et les résultats vivent dans `.claude/codex-local/`: Codex peut les lire, seul Claude écrit `learned.md`.
+- sécurité, authentification, permissions, exposition de données
+- données personnelles, RGPD, conformité
+- suppression, migration ou fusion de données, opérations irréversibles
+- configuration de production, déploiement, DNS, accès
+- calcul financier, paie, facturation
+- analyse juridique ou contractuelle
+- diagnostic d'incident qui déclenche une action coûteuse
+- choix d'architecture difficile à défaire
 
-Limite de taille: Codex plafonne les docs d'instructions (32 KiB par défaut, `project_doc_max_bytes`). Un CLAUDE.md volumineux sera tronqué côté Codex.
+Le protocole évite les deux pièges classiques, l'ancrage et la complaisance :
+
+1. **À l'aveugle d'abord** (`--mode blind`) : Codex reçoit la question et les sources brutes, sans la conclusion de Claude. S'il arrive seul au même résultat, avec des preuves, la confiance monte vraiment.
+2. **Puis l'attaque** (`--mode review --tier deep --stakes high`) : Codex reçoit la conclusion et doit la contester. Sa réponse suit un schéma JSON strict (verdict, findings classés par sévérité, risques manqués, vérifications à lancer).
+3. **Claude tranche par les preuves**, pas par la diplomatie, puis enregistre qui avait raison (`codex_right`, `claude_right`, `both_partly`, `inconclusive`). Avec le temps, `stats` montre si le contradicteur est fiable.
+
+## Niveaux d'autonomie
+
+| Niveau | Ce que Codex peut faire | Contrôle de Claude |
+|---|---|---|
+| **L1** | lecture seule | vérifie le résultat |
+| **L2** | écriture dans un git worktree isolé (branche `codex/<id>`) | relecture complète |
+| **L3** | écriture directe dans le projet | relecture du diff |
+
+Un type de tâche passe de L2 à L3 à partir de 5 verdicts, 80 % acceptés, sans rejet récent ni rejet sur un enjeu élevé. Le calcul est fait par `stats`. Après un rejet, le type de tâche redescend en L2.
 
 ## Garde-fous
 
-- Jamais `--yolo`. Lecture seule par défaut; écriture = `workspace-write`, refusée hors dépôt git.
-- Écriture: arbre propre exigé, ou `--worktree` (branche `codex/<id>` isolée, niveau L2 par défaut).
-- Brief refusé s'il contient un motif de secret (clés AWS/OpenAI/GitHub/Slack, clé privée, `password=`...).
-- Le pont signale tout fichier sensible touché (`.env*`, `.claude/settings*`, workflows CI, clés).
-- Codex n'a pas l'instruction de commit ni de push.
+- **Jamais `--yolo`.** Lecture seule par défaut. L'écriture passe par `workspace-write` et elle est refusée hors d'un dépôt git.
+- **Arbre propre exigé** pour écrire, ou `--worktree` pour isoler le travail.
+- **Brief refusé** s'il contient un motif de secret (clés AWS, OpenAI, GitHub, Slack, clé privée, `password=`...).
+- **Fichiers sensibles signalés** quand Codex les modifie (`.env*`, `.claude/settings*`, workflows CI, clés).
+- **Pas de commit ni de push** demandé à Codex.
+- **Aucune modification** de `~/.codex/config.toml` : tout passe par des overrides `-c` au moment du run.
 
-## Quota Codex (garde-fou principal)
+## Codex lit ta base `.claude`
 
-`/status` dans Codex donne le quota en pourcentage restant (fenêtre 5h et hebdomadaire, avec l'heure de reset), pas en tokens. Le pont raisonne donc en pourcentage:
-- **Lecture automatique** après chaque run, si Codex expose `rate_limits` dans ses événements ou dans son fichier de session (`~/.codex/sessions/`). À confirmer sur ta version (voir ci-dessous).
-- **Saisie manuelle** sinon, depuis `/status`:
+Par défaut, Codex lit `AGENTS.md`, pas `CLAUDE.md`. Le plugin comble l'écart sans rien toucher à ta config Codex :
+
+1. Chaque run passe `-c project_doc_fallback_filenames=["CLAUDE.md"]` : Codex charge `CLAUDE.md` là où il n'y a pas d'`AGENTS.md` dans le même dossier. Si les deux existent, `AGENTS.md` gagne.
+2. Chaque brief liste les fichiers utiles qui existent (`CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`, `.claude/rules/**`, `.claude/skills/*/SKILL.md`, `.claude/codex-local/learned.md`) et l'ordre de lecture. Les `@imports` de `CLAUDE.md` ne sont pas expansés par Codex, le brief le lui rappelle.
+3. Les agents `.claude/agents/*.md` (projet et `~/.claude/agents`) sont listés comme définitions de rôle. Codex en endosse un seulement si le brief le nomme (`run --agent <nom>`). Leur frontmatter (`tools`, `model`) est ignoré et n'élargit jamais le sandbox.
+4. Le ledger, `learned.md` et les résultats vivent dans `.claude/codex-local/`. Codex peut les lire, seul Claude écrit `learned.md`.
+
+Limite : Codex plafonne la taille des docs d'instructions (32 KiB par défaut, `project_doc_max_bytes`). Un `CLAUDE.md` plus gros sera tronqué côté Codex.
+
+## Quota Codex
+
+`/status` dans Codex donne le quota en pourcentage restant (fenêtre 5h et semaine, avec l'heure de reset). Le pont raisonne donc en pourcentage :
+
+- **Lecture automatique** après chaque run, si Codex expose `rate_limits` dans ses événements ou dans son fichier de session (`~/.codex/sessions/`).
+- **Saisie manuelle** sinon, à partir de `/status` (ou colle simplement la sortie de `/status` après `/codex-local quota`) :
   ```bash
   "$CODEX_LOCAL" quota set --short-left 89 --short-resets 23:16 --week-left 68 --week-resets "2026-11-19 11:06"
   "$CODEX_LOCAL" quota show
   ```
-- **Planchers** (modifiables: `config set --budget week_delegate_floor=50 --global`), mis à l'échelle du temps restant avant le reset: sous `*_delegate_floor` (défauts: 5h 40%, semaine 50%), plus de délégation ordinaire; sous `*_review_floor` (10% et 15%), plus rien. Entre les deux, seules les secondes opinions à enjeux élevés passent.
+- **Planchers**, ajustés au temps restant avant le reset. Sous `*_delegate_floor` (par défaut 40 % sur 5h, 50 % sur la semaine), plus de délégation ordinaire. Sous `*_review_floor` (10 % et 15 %), plus rien. Entre les deux, seules les secondes opinions à enjeux élevés passent. Modifiables avec `config set --budget week_delegate_floor=50 --global`.
 - Un relevé périmé (fenêtre déjà réinitialisée) est ignoré.
-- `quota show` estime aussi, de façon approximative, combien de tokens du pont correspondent à 1% de quota hebdo.
 
-Vérifier si la lecture automatique marche chez toi:
+Pour vérifier que la lecture automatique fonctionne chez toi :
+
 ```bash
 grep -rhoE '"rate_limits".{0,300}' ~/.codex/sessions | tail -1
 ```
 
-Les limites en tokens (`short_soft`, `week_soft`, etc., via `config set --budget`) restent possibles mais facultatives.
+## Configuration
 
-## Niveaux d'autonomie
+Choisis les modèles par tier une fois pour tous tes projets (ou demande à Claude : `/codex-local config`) :
 
-L1 lecture seule, L2 écriture en worktree avec relecture complète, L3 écriture directe avec relecture du diff. Un type de tâche passe L2 vers L3 à 5 verdicts, 80% acceptés, sans rejet récent ni rejet sur enjeu élevé. Calcul dans `stats`, pas au feeling.
+```bash
+"$CODEX_LOCAL" config set --tier fast     --model <nom> --effort low    --global
+"$CODEX_LOCAL" config set --tier standard --model <nom> --effort medium --global
+"$CODEX_LOCAL" config set --tier deep     --model <nom> --effort high   --global
+```
 
-## À régler après installation
+Sans modèle configuré, Codex utilise celui de `~/.codex/config.toml`. Un projet peut surcharger la config globale avec la même commande sans `--global`. Priorité : défauts < global < projet. Les noms de modèles changent souvent, ils ne sont donc pas figés dans le plugin.
 
-- Modèles par tier, une fois pour tous les projets (ou demander à Claude: `/codex-local config`):
-  ```bash
-  python3 <chemin>/codex_local.py config set --tier fast --model <nom> --effort low --global
-  python3 <chemin>/codex_local.py config set --tier standard --model <nom> --effort medium --global
-  python3 <chemin>/codex_local.py config set --tier deep --model <nom> --effort high --global
-  ```
-  Écrit dans `~/.claude/codex-local/config.json`. Un projet peut surcharger avec la même commande sans `--global`. Priorité: défauts < global < projet. Les noms changent souvent, je ne les ai pas figés.
-- Ajouter `.claude/codex-local/` à ton `.gitignore` si tu ne veux pas versionner le ledger (le sous-dossier `runs/` est déjà ignoré).
+Ajoute `.claude/codex-local/` à ton `.gitignore` si tu ne veux pas versionner le ledger (le sous-dossier `runs/` est déjà ignoré).
 
-## Points non vérifiés (à tester une fois avec le vrai Codex)
+## Points encore à valider
 
-Je n'ai pas pu lancer le vrai Codex dans mon environnement, les tests ont utilisé un faux binaire qui imite l'interface. À confirmer chez toi:
+Le plugin a été testé avec un faux binaire Codex qui imite son interface. À confirmer avec le vrai Codex :
+
 - `codex login status` (affiché dans `doctor`, ignoré s'il échoue).
-- Reprise `--resume`: l'identifiant de session est lu dans les événements JSON (`thread_id`); à défaut le pont utilise `--last`.
-- Le prompt est passé sur stdin avec `-`, y compris pour `codex exec resume`.
-- `--output-schema` exige un schéma strict (fourni dans `schemas/review.json`).
+- La reprise `--resume` : l'identifiant de session est lu dans les événements JSON (`thread_id`), sinon le pont utilise `--last`.
+- Le prompt passé sur stdin avec `-`, y compris pour `codex exec resume`.
+- `--output-schema` avec le schéma strict fourni dans `schemas/review.json`.
+
+Un retour sur l'un de ces points ? Ouvre une issue.
+
+## Licence
+
+[MIT](LICENSE). Utilisation à tes risques : le plugin fait écrire un autre agent dans ton code, avec des garde-fous, mais sans garantie.
